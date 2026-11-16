@@ -11,7 +11,7 @@ cc-chat installs a `chat` command that starts a Claude Code session set up for c
 | | Running `claude` | Running `chat` |
 |---|---|---|
 | System prompt | Claude Code's default, coding-focused prompt | **Replaced** by a conversation prompt modeled on the published claude.ai prompt |
-| Tools | All tools, including file editing and shell commands | Web search only (WebSearch, WebFetch) |
+| Tools | All tools, including file editing and shell commands | File reading and web search only (Read, WebSearch, WebFetch); no file editing or shell |
 | Your MCP servers | All loaded | None loaded |
 | Working folder | Wherever you are, including that folder's CLAUDE.md | A dedicated empty folder, unaffected by your projects |
 | History | Mixed with your coding sessions | Kept separate, so `chat -c` / `chat -r` only see chats |
@@ -86,6 +86,18 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows
 
 On first run, Claude Code may ask whether you trust the folder. Choose **Yes**: it is cc-chat's own empty folder.
 
+### Sending files and images
+
+Like attaching files on the website, there are three ways:
+
+- **Drag and drop**: drag a file from Finder or File Explorer into the terminal input. Its path is filled in; add your question and press Enter.
+- **@ mention**: type `@` followed by a path, e.g. `@~/Desktop/report.pdf summarize this`. Press `Tab` to complete paths.
+- **Paste an image**: take a screenshot and press `Ctrl+V` in the input (also `Ctrl+V` on macOS, not `Cmd+V`; `Alt+V` on Windows).
+
+Supported: text, code, Markdown, PDF, images (PNG, JPG, etc.) and Jupyter notebooks. Word, Excel and PowerPoint files can't be read; save them as PDF or text first.
+
+Before reading a file, Claude Code asks whether to allow it. Choose **Yes**. This works like the upload step on the website and ensures it only reads files you approve.
+
 `chat` accepts any `claude` flag, e.g. `chat --model sonnet`.
 
 ## Customizing the style
@@ -145,7 +157,10 @@ Not quite. The prompt is adapted from the tone and formatting sections of the pu
 Use PowerShell or Windows Terminal, or type `chat` first and enter your question inside the session.
 
 **Can it read files on my computer?**
-No. cc-chat disables all file and shell tools and runs in an empty folder.
+Only the ones you send it. cc-chat enables only the read-only Read tool: it can't modify files or run commands, and reading a file outside the chat folder needs your approval each time.
+
+**Why does it ask every time it reads a file?**
+On purpose. cc-chat can also access the web. If file reads needed no approval, text on a malicious web page could trick it into reading private files and sending them out. With approval kept, it can only read files you agree to.
 
 ## How it works
 
@@ -157,12 +172,12 @@ No. cc-chat disables all file and shell tools and runs in an empty folder.
 
    ```bash
    claude --system-prompt-file <prompt file> \
-          --tools "WebSearch,WebFetch" \
+          --tools "Read,WebSearch,WebFetch" \
           --strict-mcp-config
    ```
 
    - `--system-prompt-file` replaces Claude Code's default coding prompt.
-   - `--tools "WebSearch,WebFetch"` keeps web search only; no file access or shell.
+   - `--tools "Read,WebSearch,WebFetch"` keeps file reading and web search only; no file editing or shell.
    - `--strict-mcp-config` skips your configured MCP servers.
 
 Everything lives in `~/.cc-chat` (`%USERPROFILE%\.cc-chat` on Windows). Claude Code stores the chat history itself under `~/.claude/projects/`.

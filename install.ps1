@@ -67,7 +67,7 @@ $Utf8 = New-Object System.Text.UTF8Encoding($false)
 $Text = [IO.File]::ReadAllText($Prompt, $Utf8) + "`n`nToday's date is $(Get-Date -Format 'yyyy-MM-dd').`n"
 [IO.File]::WriteAllText($Session, $Text, $Utf8)
 Set-Location $Workspace
-& claude --system-prompt-file $Session --tools 'WebSearch,WebFetch' --strict-mcp-config @args
+& claude --system-prompt-file $Session --tools 'Read,WebSearch,WebFetch' --strict-mcp-config @args
 exit $LASTEXITCODE
 '@
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)

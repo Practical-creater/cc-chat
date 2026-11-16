@@ -70,7 +70,7 @@ SESSION="\$APP_HOME/.session-prompt.md"
 cd "\$APP_HOME/workspace"
 exec claude \\
   --system-prompt-file "\$SESSION" \\
-  --tools "WebSearch,WebFetch" \\
+  --tools "Read,WebSearch,WebFetch" \\
   --strict-mcp-config \\
   "\$@"
 EOF

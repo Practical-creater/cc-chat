@@ -11,7 +11,7 @@ cc-chat 安装一个 `chat` 命令，启动一个专门用来聊天的 Claude Co
 | | 直接运行 `claude` | 运行 `chat` |
 |---|---|---|
 | 系统提示词 | Claude Code 默认的编程向提示词 | **替换**为参照官方公开的 claude.ai 提示词编写的对话提示词 |
-| 工具 | 读写文件、执行命令等全部工具 | 只保留联网搜索（WebSearch、WebFetch） |
+| 工具 | 读写文件、执行命令等全部工具 | 只保留读取文件和联网搜索（Read、WebSearch、WebFetch），不能修改文件或执行命令 |
 | 你配置的 MCP 服务器 | 全部加载 | 不加载 |
 | 运行目录 | 当前所在目录，会读取那里的 CLAUDE.md | 固定在独立的空目录，不受项目文件影响 |
 | 聊天记录 | 和编程会话混在一起 | 单独存放，`chat -c` / `chat -r` 只找聊天记录 |
@@ -86,6 +86,18 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows
 
 第一次运行时，Claude Code 可能会问你是否信任这个文件夹，选 **Yes** 即可。那是 cc-chat 自己的空目录，里面没有任何文件。
 
+### 发送文件和图片
+
+和网页版上传附件类似，有三种方式：
+
+- **拖进来**：把文件从访达（Finder）或资源管理器拖到终端的输入框，会自动填入文件路径，再输入你的问题后回车。
+- **@ 引用**：输入 `@` 加文件路径，例如 `@~/Desktop/报告.pdf 帮我总结一下`，输入时按 `Tab` 可以补全路径。
+- **粘贴图片**：截图后在输入框里按 `Ctrl+V`（macOS 上也是 `Ctrl+V`，不是 `Cmd+V`；Windows 上按 `Alt+V`）。
+
+支持文本、代码、Markdown、PDF、图片（PNG、JPG 等）和 Jupyter Notebook。Word、Excel、PPT 等格式读不了，请先另存为 PDF 或文本。
+
+读取文件前，Claude Code 会弹出一个确认，问你是否允许读取这个文件，选 **Yes** 即可。这一步相当于网页版的"上传"确认，保证它只能读你同意的文件。
+
 `chat` 后面可以接任何 `claude` 支持的参数，例如 `chat --model sonnet`。
 
 ## 自定义聊天风格
@@ -145,7 +157,10 @@ irm https://raw.githubusercontent.com/Practical-creater/cc-chat/main/uninstall.p
 请在 PowerShell 或 Windows Terminal 里使用；或者先输入 `chat` 进入对话，再输入中文。
 
 **会不会读取我电脑上的文件？**
-不会。cc-chat 关闭了所有读写文件和执行命令的工具，并且在一个空目录里运行。
+只会读你发给它的文件。cc-chat 只开放了只读的 Read 工具，不能修改文件，也不能执行命令；读取聊天目录以外的文件时，每次都需要你在弹出的确认里同意。
+
+**为什么读取文件时每次都要确认？**
+这是有意保留的。cc-chat 同时能联网，如果读取文件不需要确认，恶意网页里的文字就有可能诱导它去读你电脑上的私密文件，再通过联网发出去。保留确认，它就只能读你点头同意的文件。
 
 ## 原理
 
@@ -157,12 +172,12 @@ irm https://raw.githubusercontent.com/Practical-creater/cc-chat/main/uninstall.p
 
    ```bash
    claude --system-prompt-file <提示词文件> \
-          --tools "WebSearch,WebFetch" \
+          --tools "Read,WebSearch,WebFetch" \
           --strict-mcp-config
    ```
 
    - `--system-prompt-file`：替换 Claude Code 默认的编程向系统提示词。
-   - `--tools "WebSearch,WebFetch"`：只保留联网搜索，不能读写文件、执行命令。
+   - `--tools "Read,WebSearch,WebFetch"`：只保留读取文件和联网搜索，不能修改文件、执行命令。
    - `--strict-mcp-config`：不加载你配置的 MCP 服务器。
 
 所有文件都在 `~/.cc-chat`（Windows 为 `%USERPROFILE%\.cc-chat`）。聊天记录由 Claude Code 自己保存在 `~/.claude/projects/` 下。
