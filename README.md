@@ -12,7 +12,8 @@ cc-chat 安装一个 `chat` 命令，启动一个专门用来聊天的 Claude Co
 |---|---|---|
 | 系统提示词 | Claude Code 默认的编程向提示词 | **替换**为参照官方公开的 claude.ai 提示词编写的对话提示词 |
 | 工具 | 读写文件、执行命令等全部工具 | 只保留读取文件和联网搜索（Read、WebSearch、WebFetch），不能修改文件或执行命令 |
-| 你配置的 MCP 服务器 | 全部加载 | 不加载 |
+| 你配置的 MCP 服务器 | 全部加载 | 不加载，只加载 cc-chat 自带的文档转换工具 |
+| Word / Excel / PPT | 要靠执行命令临时转换 | 内置转换工具，拖进来就能读 |
 | 运行目录 | 当前所在目录，会读取那里的 CLAUDE.md | 固定在独立的空目录，不受项目文件影响 |
 | 聊天记录 | 和编程会话混在一起 | 单独存放，`chat -c` / `chat -r` 只找聊天记录 |
 
@@ -23,7 +24,9 @@ cc-chat 安装一个 `chat` 命令，启动一个专门用来聊天的 Claude Co
    - Windows（PowerShell）：`irm https://claude.ai/install.ps1 | iex`
    - 装好后打开新终端，运行一次 `claude`，按提示登录（需要 Claude Pro / Max 等订阅，或 API Key）。
    - 官方文档：https://docs.claude.com/en/docs/claude-code/setup
-2. **能访问 GitHub。** 安装脚本要从 `raw.githubusercontent.com` 下载文件。如果下载失败，请先配置好代理，或者用下面"方式二"手动安装。
+2. **能访问 GitHub 和 PyPI。** 安装脚本要从 `raw.githubusercontent.com` 下载文件，并下载文档转换工具。如果下载失败，请先配置好代理，或者用下面"方式二"手动安装。
+
+其他的都不用你自己装。读取 Word / Excel / PPT 需要 [uv](https://github.com/astral-sh/uv) 和微软开源的 [MarkItDown](https://github.com/microsoft/markitdown)，安装脚本会自动检测：没有 uv 就自动装上，再自动装好 MarkItDown。整个过程不需要你另外操作。
 
 ## 安装
 
@@ -94,9 +97,15 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows
 - **@ 引用**：输入 `@` 加文件路径，例如 `@~/Desktop/报告.pdf 帮我总结一下`，输入时按 `Tab` 可以补全路径。
 - **粘贴图片**：截图后在输入框里按 `Ctrl+V`（macOS 上也是 `Ctrl+V`，不是 `Cmd+V`；Windows 上按 `Alt+V`）。
 
-支持文本、代码、Markdown、PDF、图片（PNG、JPG 等）和 Jupyter Notebook。Word、Excel、PPT 等格式读不了，请先另存为 PDF 或文本。
+支持的格式：
 
-读取文件前，Claude Code 会弹出一个确认，问你是否允许读取这个文件，选 **Yes** 即可。这一步相当于网页版的"上传"确认，保证它只能读你同意的文件。
+- **直接读取**：文本、代码、Markdown、CSV、PDF、图片（PNG、JPG 等）、Jupyter Notebook。
+- **转换后读取**：Word（.docx）、Excel（.xlsx、.xls）、PowerPoint（.pptx）、EPUB、HTML。由 MarkItDown 先把文件转成文字和表格，再交给 Claude 阅读。
+- **读不了**：旧版 .doc、.ppt 格式，请先另存为 .docx、.pptx 或 PDF。
+
+和网页版相比，有两点要知道：Excel 会被转成表格文字，阅读、总结、问答都没问题，但不能像网页版那样运行代码做精确计算或画图；Word 和 PPT 里的图片不会被读取，如果图片很重要，请导出成 PDF 再发送。
+
+读取或转换文件前，Claude Code 会弹出一个确认，问你是否允许，选 **Yes** 即可。这一步相当于网页版的"上传"确认，保证它只能读你同意的文件。
 
 `chat` 后面可以接任何 `claude` 支持的参数，例如 `chat --model sonnet`。
 
@@ -137,7 +146,7 @@ Windows：
 irm https://raw.githubusercontent.com/Practical-creater/cc-chat/main/uninstall.ps1 | iex
 ```
 
-卸载会删除 `chat` 命令、PATH 设置和 `~/.cc-chat` 文件夹（包括你改过的提示词），不会动 Claude Code 本身。如果安装时用了自定义命令名，卸载时也要带上同样的 `CC_CHAT_NAME`。
+卸载会删除 `chat` 命令、PATH 设置和 `~/.cc-chat` 文件夹（包括你改过的提示词），不会动 Claude Code 本身。uv 和 MarkItDown 会保留，因为别的程序可能也在用；如果确定不需要，可以运行 `uv tool uninstall markitdown-mcp` 删除 MarkItDown。如果安装时用了自定义命令名，卸载时也要带上同样的 `CC_CHAT_NAME`。
 
 ## 常见问题
 
@@ -148,7 +157,13 @@ irm https://raw.githubusercontent.com/Practical-creater/cc-chat/main/uninstall.p
 你的 shell 配置文件里已经有一个叫 `chat` 的别名或函数，它会覆盖 cc-chat。删掉那一行，或者用上面的方法换个命令名安装。
 
 **状态栏显示有好几个 MCP，是不是没屏蔽掉？**
-一些状态栏插件（比如 claude-hud）是读取配置文件来统计 MCP 数量的，并不知道 cc-chat 用了 `--strict-mcp-config`，所以显示的数字不准。实际加载了什么，在对话里输入 `/mcp` 查看：你自己配置的 MCP 服务器不会出现。能看到的只有 Claude Code 内置的几个（标注 "Built-in"），这些无法通过参数关闭，对上下文的影响很小。
+一些状态栏插件（比如 claude-hud）是读取配置文件来统计 MCP 数量的，并不知道 cc-chat 用了 `--strict-mcp-config`，所以显示的数字不准。实际加载了什么，在对话里输入 `/mcp` 查看：你自己配置的 MCP 服务器不会出现。能看到的是 cc-chat 自带的 `markitdown`（用来读 Word / Excel / PPT），以及 Claude Code 内置的几个（标注 "Built-in"）。内置的无法通过参数关闭，对上下文的影响很小。
+
+**提示 Word / Excel / PPT 读不了？**
+说明安装时文档转换工具没装成功，一般是网络问题。配置好代理后，重新运行一次安装命令就行。在对话里输入 `/mcp`，能看到 `markitdown` 显示为已连接，就说明装好了。
+
+**不想要 Word / Excel / PPT 支持，也不想装 uv？**
+安装时加上 `CC_CHAT_NO_OFFICE=1`，例如 `curl -fsSL https://raw.githubusercontent.com/Practical-creater/cc-chat/main/install.sh | CC_CHAT_NO_OFFICE=1 bash`。
 
 **和网页版完全一样吗？**
 不完全一样。提示词是参照官方公开的 claude.ai 系统提示词（https://platform.claude.com/docs/en/release-notes/system-prompts ）里讲语气和格式的部分改写的，风格很接近；但网页版的记忆、Artifacts、上传文件和图片等功能，终端里没有。另外终端显示 Markdown 表格和数学公式不如网页清楚。
@@ -157,7 +172,7 @@ irm https://raw.githubusercontent.com/Practical-creater/cc-chat/main/uninstall.p
 请在 PowerShell 或 Windows Terminal 里使用；或者先输入 `chat` 进入对话，再输入中文。
 
 **会不会读取我电脑上的文件？**
-只会读你发给它的文件。cc-chat 只开放了只读的 Read 工具，不能修改文件，也不能执行命令；读取聊天目录以外的文件时，每次都需要你在弹出的确认里同意。
+只会读你发给它的文件。cc-chat 只开放了只读的 Read 工具和 MarkItDown 转换工具，不能修改文件，也不能执行命令；读取或转换聊天目录以外的文件时，每次都需要你在弹出的确认里同意。
 
 **为什么读取文件时每次都要确认？**
 这是有意保留的。cc-chat 同时能联网，如果读取文件不需要确认，恶意网页里的文字就有可能诱导它去读你电脑上的私密文件，再通过联网发出去。保留确认，它就只能读你点头同意的文件。
@@ -166,19 +181,20 @@ irm https://raw.githubusercontent.com/Practical-creater/cc-chat/main/uninstall.p
 
 `chat` 只是一个启动脚本，做了这几件事：
 
-1. 读取 `prompt.md`，在末尾加上今天的日期，生成本次会话的系统提示词文件；
+1. 读取 `prompt.md`（聊天风格，你可以改）和 `tools.md`（读文件的说明，每次安装会更新），加上今天的日期，生成本次会话的系统提示词文件；
 2. 切换到独立的空目录 `~/.cc-chat/workspace`；
 3. 运行：
 
    ```bash
    claude --system-prompt-file <提示词文件> \
           --tools "Read,WebSearch,WebFetch" \
+          --mcp-config ~/.cc-chat/mcp.json \
           --strict-mcp-config
    ```
 
    - `--system-prompt-file`：替换 Claude Code 默认的编程向系统提示词。
    - `--tools "Read,WebSearch,WebFetch"`：只保留读取文件和联网搜索，不能修改文件、执行命令。
-   - `--strict-mcp-config`：不加载你配置的 MCP 服务器。
+   - `--mcp-config` + `--strict-mcp-config`：只加载 cc-chat 自带的 MarkItDown 文档转换工具，不加载你配置的其他 MCP 服务器。
 
 所有文件都在 `~/.cc-chat`（Windows 为 `%USERPROFILE%\.cc-chat`）。聊天记录由 Claude Code 自己保存在 `~/.claude/projects/` 下。
 

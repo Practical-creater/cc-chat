@@ -7,6 +7,7 @@
 #   CC_CHAT_NAME   command name to install (default: chat)
 #   CC_CHAT_HOME   data folder (default: ~/.cc-chat)
 #   CC_CHAT_BIN    folder for the command (default: ~/.local/bin)
+#   CC_CHAT_NO_OFFICE=1  skip Word/Excel/PPT support (no uv, no MarkItDown)
 set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/Practical-creater/cc-chat/main"
@@ -15,6 +16,7 @@ APP_HOME="${CC_CHAT_HOME:-$HOME/.cc-chat}"
 BIN_DIR="${CC_CHAT_BIN:-$HOME/.local/bin}"
 MARK_BEGIN="# >>> cc-chat >>>"
 MARK_END="# <<< cc-chat <<<"
+MARKITDOWN_PKG="markitdown-mcp==0.0.1a8"
 
 info() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
@@ -34,24 +36,59 @@ fi
 
 mkdir -p "$APP_HOME/workspace" "$BIN_DIR"
 
-# 2. System prompt. Keep the user's edited copy if one exists.
+# 2. Prompt files. prompt.md (style) is the user's to edit and is kept;
+#    tools.md (file handling) is always refreshed.
 SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/prompt.md" ]; then
-  cp "$SCRIPT_DIR/prompt.md" "$APP_HOME/prompt.default.md"
-else
-  curl -fsSL "$REPO_RAW/prompt.md" -o "$APP_HOME/prompt.default.md" \
-    || die "Could not download prompt.md from GitHub. Check your network or proxy."
-fi
+fetch() {  # fetch <repo file> <destination>
+  if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$1" ]; then
+    cp "$SCRIPT_DIR/$1" "$2"
+  else
+    curl -fsSL "$REPO_RAW/$1" -o "$2" \
+      || die "Could not download $1 from GitHub. Check your network or proxy."
+  fi
+}
+fetch prompt.md "$APP_HOME/prompt.default.md"
+fetch tools.md  "$APP_HOME/tools.md"
 if [ -f "$APP_HOME/prompt.md" ]; then
   info "Keeping your existing prompt: $APP_HOME/prompt.md"
 else
   cp "$APP_HOME/prompt.default.md" "$APP_HOME/prompt.md"
 fi
 
-# 3. The launcher command.
+# 3. Word/Excel/PPT support: uv + Microsoft MarkItDown as a local MCP server.
+rm -f "$APP_HOME/mcp.json"
+if [ "${CC_CHAT_NO_OFFICE:-0}" != "1" ]; then
+  UV="$(command -v uv 2>/dev/null || true)"
+  [ -z "$UV" ] && [ -x "$HOME/.local/bin/uv" ] && UV="$HOME/.local/bin/uv"
+  if [ -z "$UV" ]; then
+    info "Installing uv (needed for Word/Excel/PPT support)..."
+    if curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1; then
+      for c in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+        [ -x "$c" ] && UV="$c" && break
+      done
+    fi
+  fi
+  MD=""
+  if [ -n "$UV" ]; then
+    info "Installing the Word/Excel/PPT converter (first time may take a minute)..."
+    if "$UV" tool install --force "$MARKITDOWN_PKG" >/dev/null 2>&1; then
+      MD="$("$UV" tool dir --bin)/markitdown-mcp"
+      [ -x "$MD" ] || MD=""
+    fi
+  fi
+  if [ -n "$MD" ]; then
+    printf '{"mcpServers":{"markitdown":{"command":"%s","args":[]}}}\n' "$MD" > "$APP_HOME/mcp.json"
+    info "Word/Excel/PPT support is ready."
+  else
+    warn "Could not set up Word/Excel/PPT support. Plain chat, PDF and images still work."
+    warn "Check your network or proxy, then run this installer again."
+  fi
+fi
+
+# 4. The launcher command.
 LAUNCHER="$BIN_DIR/$NAME"
 cat > "$LAUNCHER" <<EOF
 #!/usr/bin/env bash
@@ -66,18 +103,26 @@ mkdir -p "\$APP_HOME/workspace"
 PROMPT="\$APP_HOME/prompt.md"
 [ -f "\$PROMPT" ] || PROMPT="\$APP_HOME/prompt.default.md"
 SESSION="\$APP_HOME/.session-prompt.md"
-{ cat "\$PROMPT"; printf '\n\nToday'"'"'s date is %s.\n' "\$(date +%Y-%m-%d)"; } > "\$SESSION"
+{
+  cat "\$PROMPT"
+  [ -f "\$APP_HOME/tools.md" ] && { printf '\n\n'; cat "\$APP_HOME/tools.md"; }
+  printf '\n\nToday'"'"'s date is %s.\n' "\$(date +%Y-%m-%d)"
+} > "\$SESSION"
+MCP=()
+export MCP_TIMEOUT="\${MCP_TIMEOUT:-60000}"
+[ -f "\$APP_HOME/mcp.json" ] && MCP=(--mcp-config "\$APP_HOME/mcp.json")
 cd "\$APP_HOME/workspace"
 exec claude \\
   --system-prompt-file "\$SESSION" \\
   --tools "Read,WebSearch,WebFetch" \\
+  "\${MCP[@]+"\${MCP[@]}"}" \\
   --strict-mcp-config \\
   "\$@"
 EOF
 chmod +x "$LAUNCHER"
 info "Installed command: $LAUNCHER"
 
-# 4. Put BIN_DIR first on PATH (macOS ships an unrelated /usr/sbin/chat).
+# 5. Put BIN_DIR first on PATH (macOS ships an unrelated /usr/sbin/chat).
 PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
 add_block() {
   local rc="$1"
@@ -102,7 +147,7 @@ if [ -d "$HOME/.config/fish" ] && ! grep -qF "$BIN_DIR" "$HOME/.config/fish/conf
   info "Added $BIN_DIR to PATH in fish config"
 fi
 
-# 5. Warn about an existing alias or function with the same name.
+# 6. Warn about an existing alias or function with the same name.
 for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
   [ -f "$rc" ] || continue
   if grep -nE "^[[:space:]]*(alias[[:space:]]+$NAME=|(function[[:space:]]+)?$NAME[[:space:]]*\(\))" "$rc" >/dev/null; then
